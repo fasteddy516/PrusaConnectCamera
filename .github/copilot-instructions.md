@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-This repository is for a Python script that connects a USB webcam on a Raspberry Pi to Prusa Connect using the Prusa Connect camera API.
+This repository is for a Python service that connects USB webcams and/or a Raspberry Pi CSI camera to Prusa Connect using the Prusa Connect camera API. The service runs headlessly on a Raspberry Pi and supports up to four USB (V4L2) cameras and one CSI camera simultaneously, each independently associated with any printer in your Prusa Connect account.
 
 ## Reference Documentation
 
@@ -34,7 +34,7 @@ This repository is for a Python script that connects a USB webcam on a Raspberry
 - The normal production deployment model is a `systemd` service.
 - Run all configured cameras in one application process managed by one `systemd` unit.
 - Prefer running the service by executing the venv Python interpreter directly from `ExecStart` rather than using a shell wrapper script.
-- Use Linux-standard defaults unless overridden in JSON: config at `/etc/prusaconnectcamera/config.json`, state at `/var/lib/prusaconnectcamera`, and logs via `journald`.
+- Use project-relative defaults for development (`./config.json`, `./state`). The production `systemd` service passes the config path explicitly via `--config /opt/prusaconnectcamera/config.json`. Logs go to `journald` via stdout/stderr in service mode.
 - Favor predictable startup behavior, clear logging, and clean shutdown handling suitable for a long-running service.
 - Do not assume an interactive shell, attached monitor, or manual user intervention during normal operation.
 
@@ -50,8 +50,8 @@ This repository is for a Python script that connects a USB webcam on a Raspberry
 - Treat camera registration, fingerprint handling, snapshot upload, and camera attribute updates as separate responsibilities in the code.
 - Prefer a design where the transport layer mirrors the documented API endpoints closely, with higher-level logic for capture scheduling, retry policy, and local device management layered on top.
 - Respect the documented API contract for `POST /app/printers/{printer_uuid}/camera`, `PUT /c/snapshot`, and `PUT /c/info`, including expected authentication, payload structure, and status handling.
-- Generate each camera fingerprint once and persist it on disk so camera identity remains stable across restarts and reboots.
-- Store persistent runtime state (for example fingerprints) in a Linux-standard persistent location such as `/var/lib/prusaconnectcamera`, with paths configurable in JSON.
+- Generate each camera fingerprint once, store it as a field in the camera's JSON config entry, and write it back atomically at load time so camera identity remains stable across restarts and reboots. Deleting a fingerprint value and restarting is the supported rotation mechanism.
+- `state_dir` in the config is available for other persistent runtime state. Fingerprints are stored directly in the config JSON and do not use `state_dir`.
 - Enforce strict permissions for the JSON configuration file because it contains tokens; fail fast at startup if file permissions are broader than expected for secrets.
 - Redact sensitive values in logs (at minimum token and full fingerprint) and never emit them in plaintext.
 - Keep snapshot uploads efficient and bounded; the API documents a maximum snapshot size of 16 MB.
@@ -73,6 +73,8 @@ This repository is for a Python script that connects a USB webcam on a Raspberry
 - Keep service behavior resilient for unattended operation: retries should continue indefinitely unless explicitly disabled in config.
 - Update camera metadata with `PUT /c/info` at startup and when local camera configuration changes.
 - Define config change detection with a deterministic method (for example full-file hash comparison) and only refresh affected camera metadata.
+- Collect host network info (`network_info`) once at startup — not on a polling loop — and include it in `PUT /c/info` payloads. When the default route is wireless, include `wifi_mac`, `wifi_ipv4`, and `wifi_ssid` (SSID via `iwgetid -r`; omit gracefully if unavailable). When wired, include `lan_mac` and `lan_ipv4`. Include IPv6 only when IPv4 is unavailable.
+- For V4L2 (USB) captures, skip the first ~20 frames via ffmpeg to avoid dark/black warm-up frames from freshly opened webcams.
 - Avoid hard-coding paths or assumptions that only work on a development workstation.
 - If service files, setup steps, or deployment documentation are added, keep them compatible with `systemd` on Raspberry Pi OS.
 
@@ -80,11 +82,11 @@ This repository is for a Python script that connects a USB webcam on a Raspberry
 
 - Define and document a strict schema for the JSON config file.
 - Require a top-level camera list with 1 to 4 USB (`V4L2`) cameras plus up to 1 CSI camera, reflecting the 4 USB ports and single CSI connector on a Raspberry Pi.
-- Require per-camera fields at minimum: `name`, `printer_uuid`, `token`, `device_path`, `driver`, `trigger_scheme`, and resolution settings.
+- Require per-camera fields at minimum: `name`, `printer_uuid`, `token`, `device_path`, `driver`, `trigger_scheme`, and `resolution`.
+- Optional per-camera fields: `enabled` (bool, default `true`), `fingerprint` (UUID4 string, auto-generated and written back if absent), `firmware` (string, defaults to script version), `manufacturer` (string, defaults to `"fasteddy516"`), `model` (string, defaults to a generated label).
 - Restrict `trigger_scheme` to `MANUAL`, `TEN_SEC`, `THIRTY_SEC`, `SIXTY_SEC`, `TEN_MIN` (deprecated compatibility).
 - Require explicit backend/driver selection compatible with device type (`V4L2` for USB webcams, `CSI` for Raspberry Pi CSI camera input).
 - Allow unknown keys in the config file but emit a warning for each unrecognised key at startup; do not fail.
-- Include optional per-camera overrides for capture command tuning and retry policy if needed.
 
 ## Security Requirements
 

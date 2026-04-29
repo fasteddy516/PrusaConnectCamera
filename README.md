@@ -28,7 +28,12 @@ sudo apt install ffmpeg libcamera-tools
 ```
 
 `ffmpeg` is required for USB/V4L2 cameras.  
-`libcamera-tools` (provides `libcamera-still`) is required for the CSI camera.
+`libcamera-tools` (provides `libcamera-still`) is required for the CSI camera.  
+`wireless-tools` (provides `iwgetid`) is optional but recommended — it enables `wifi_ssid` reporting in camera attributes when the Pi is connected via Wi-Fi.
+
+```bash
+sudo apt install wireless-tools
+```
 
 ---
 
@@ -148,9 +153,11 @@ If a camera entry is missing `fingerprint`, the application generates one
 automatically and writes it back into the config file. Deleting a fingerprint
 and restarting is the supported way to rotate it.
 
-Network info (`network_info`) is collected at runtime from the Pi network state
-and is not a config key. The service sends Wi-Fi keys when the default route is
-wireless, otherwise LAN keys, and includes IPv6 only when IPv4 is unavailable.
+Network info (`network_info`) is collected once at startup from the Pi network state
+and is not a config key. When the default route is wireless, the service reports
+`wifi_mac`, `wifi_ipv4`, and `wifi_ssid` (SSID is omitted if `iwgetid` is
+unavailable). When wired, it reports `lan_mac` and `lan_ipv4`. IPv6 is included
+only when IPv4 is unavailable.
 
 ### Trigger schemes
 
