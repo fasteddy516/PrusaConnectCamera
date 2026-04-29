@@ -18,8 +18,8 @@ User=prusaconnectcamera
 WorkingDirectory=/opt/prusaconnectcamera
 
 # Invoke the venv interpreter directly — no shell wrapper needed.
-ExecStart=/opt/prusaconnectcamera/.venv/bin/python /opt/prusaconnectcamera/main.py \
-    --config /etc/prusaconnectcamera/config.json
+ExecStart=/opt/prusaconnectcamera/.venv/bin/python /opt/prusaconnectcamera/prusaconnectcamera.py \
+    --config /opt/prusaconnectcamera/config.json
 
 # Restart on non-zero exit so the service recovers from transient failures,
 # but not on a clean exit (e.g. SIGTERM from systemctl stop).

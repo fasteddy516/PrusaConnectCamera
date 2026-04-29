@@ -8,8 +8,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CONFIG_PATH = "/etc/prusaconnectcamera/config.json"
-DEFAULT_STATE_DIR = "/var/lib/prusaconnectcamera"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG_PATH = str(_PROJECT_ROOT / "config.json")
+DEFAULT_STATE_DIR = str(_PROJECT_ROOT / "state")
 
 _VALID_DRIVERS = frozenset({"V4L2", "CSI"})
 _VALID_TRIGGER_SCHEMES = frozenset({"MANUAL", "TEN_SEC", "THIRTY_SEC", "SIXTY_SEC", "TEN_MIN"})

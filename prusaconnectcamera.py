@@ -2,15 +2,16 @@
 """PrusaConnectCamera — connects USB/CSI cameras on a Raspberry Pi to Prusa Connect.
 
 Normal usage (service):
-  /opt/prusaconnectcamera/.venv/bin/python /opt/prusaconnectcamera/main.py
+    /opt/prusaconnectcamera/.venv/bin/python /opt/prusaconnectcamera/prusaconnectcamera.py
 
 Development / testing:
-  python main.py --config /path/to/config.json
+    python prusaconnectcamera.py --config /path/to/config.json
 """
 
 import argparse
 import hashlib
 import logging
+import os
 import signal
 import sys
 import threading

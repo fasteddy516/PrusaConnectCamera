@@ -52,7 +52,8 @@ class V4L2Backend(CaptureBackend):
                     "-f", "v4l2",                  # V4L2 input format
                     "-video_size", f"{self._width}x{self._height}",
                     "-i", self._device,
-                    "-vframes", "1",               # single frame
+                    "-vf", "select='gte(n,20)'",   # discard early dark frames
+                    "-frames:v", "1",              # single frame
                     "-q:v", "2",                   # high JPEG quality
                     tmp_path,
                 ],
