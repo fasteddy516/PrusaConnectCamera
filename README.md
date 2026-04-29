@@ -191,6 +191,8 @@ only when IPv4 is unavailable.
 
 When `streaming` is enabled for a camera, the app starts a local MediaMTX instance automatically and publishes video-only H.264 streams.
 
+The default streaming pipeline is tuned for lower latency (short GOP/keyframe interval and reduced mux/encoder buffering) to keep video closer to real time on Raspberry Pi hardware.
+
 - RTMP URL syntax: `rtmp://<pi-ip>:<rtmp_port>/<path>`
 - USB camera paths: `usb/1` through `usb/4`
 - CSI camera path: `csi/1`
@@ -204,6 +206,8 @@ Examples:
 - `rtmp://192.168.1.50:1935/csi/1`
 
 The service logs stream URLs on startup for each enabled camera with streaming enabled.
+
+Client players can still add their own buffering. For lowest latency, select any low-latency/live mode in your player and reduce client-side network cache.
 
 ---
 

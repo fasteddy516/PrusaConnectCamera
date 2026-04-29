@@ -275,6 +275,8 @@ class StreamPublisher:
         fps = self._camera["fps"]
         bitrate_kbps = self._camera["bitrate"]
         bitrate = f"{bitrate_kbps}k"
+        gop = max(1, fps)
+        vbv_buf_kbps = max(256, bitrate_kbps // 2)
 
         command = [
             "ffmpeg",
@@ -296,6 +298,12 @@ class StreamPublisher:
             "veryfast",
             "-tune",
             "zerolatency",
+            "-g",
+            str(gop),
+            "-keyint_min",
+            str(gop),
+            "-sc_threshold",
+            "0",
             "-pix_fmt",
             "yuv420p",
             "-b:v",
@@ -303,7 +311,13 @@ class StreamPublisher:
             "-maxrate",
             bitrate,
             "-bufsize",
-            f"{bitrate_kbps * 2}k",
+            f"{vbv_buf_kbps}k",
+            "-flush_packets",
+            "1",
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
             "-f",
             "flv",
             self._stream_url,
@@ -323,6 +337,8 @@ class StreamPublisher:
             "-t",
             "0",
             "--inline",
+            "--intra",
+            str(max(1, fps)),
             "--codec",
             "h264",
             "--width",
@@ -348,6 +364,12 @@ class StreamPublisher:
             "-an",
             "-c:v",
             "copy",
+            "-flush_packets",
+            "1",
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
             "-f",
             "flv",
             self._stream_url,
