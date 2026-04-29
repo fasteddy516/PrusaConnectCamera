@@ -109,17 +109,23 @@ class TestValidateConfigStructure:
         result = validate_config(data)
         assert result["state_dir"] == "/tmp/test_state"
 
-    def test_default_rtmp_port(self):
+    def test_default_rtsp_port(self):
         result = validate_config(_MINIMAL_CONFIG)
-        assert result["rtmp_port"] == 1935
+        assert result["rtsp_port"] == 8554
 
-    def test_rtmp_port_override(self):
-        result = validate_config({**_MINIMAL_CONFIG, "rtmp_port": 8554})
-        assert result["rtmp_port"] == 8554
+    def test_rtsp_port_override(self):
+        result = validate_config({**_MINIMAL_CONFIG, "rtsp_port": 9554})
+        assert result["rtsp_port"] == 9554
 
-    def test_invalid_rtmp_port_fails(self):
-        with pytest.raises(RuntimeError, match="rtmp_port"):
-            validate_config({**_MINIMAL_CONFIG, "rtmp_port": 70000})
+    def test_invalid_rtsp_port_fails(self):
+        with pytest.raises(RuntimeError, match="rtsp_port"):
+            validate_config({**_MINIMAL_CONFIG, "rtsp_port": 70000})
+
+    def test_rtmp_port_is_accepted_as_deprecated_alias(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="prusaconnectcamera.config"):
+            result = validate_config({**_MINIMAL_CONFIG, "rtmp_port": 9554})
+        assert result["rtsp_port"] == 9554
+        assert "deprecated" in caplog.text
 
     def test_missing_cameras_key_fails(self):
         with pytest.raises(RuntimeError, match="cameras"):
@@ -303,7 +309,7 @@ class TestGenerateDefaultConfig:
                 data = json.load(f)
             assert "cameras" in data
             assert len(data["cameras"]) == 5
-            assert data["rtmp_port"] == 1935
+            assert data["rtsp_port"] == 8554
 
     def test_only_first_camera_enabled(self):
         with tempfile.TemporaryDirectory() as d:

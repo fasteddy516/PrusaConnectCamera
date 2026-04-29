@@ -1,4 +1,4 @@
-"""Local RTMP streaming support via MediaMTX and per-camera publisher loops."""
+"""Local RTSP streaming support via MediaMTX and per-camera publisher loops."""
 
 import logging
 import os
@@ -14,15 +14,15 @@ from .scheduler import backoff_delay
 
 log = logging.getLogger(__name__)
 
-DEFAULT_RTMP_PORT = 1935
+DEFAULT_RTSP_PORT = 8554
 
 
 class StreamingError(Exception):
-    """Raised when RTMP streaming setup fails at startup."""
+    """Raised when RTSP streaming setup fails at startup."""
 
 
 def stream_path_for_camera(driver: str, usb_index: int, csi_index: int) -> str:
-    """Return the RTMP path segment for a camera based on its driver/index."""
+    """Return the RTSP path segment for a camera based on its driver/index."""
     if driver == "V4L2":
         return f"usb/{usb_index}"
     if driver == "CSI":
@@ -30,9 +30,9 @@ def stream_path_for_camera(driver: str, usb_index: int, csi_index: int) -> str:
     raise ValueError(f"Unsupported driver for streaming: {driver!r}")
 
 
-def build_stream_url(host: str, port: int, path: str) -> str:
-    """Return a full RTMP URL using standard syntax."""
-    return f"rtmp://{host}:{port}/{path}"
+def build_rtsp_url(host: str, port: int, path: str) -> str:
+    """Return a full RTSP URL using standard syntax."""
+    return f"rtsp://{host}:{port}/{path}"
 
 
 def stream_host_for_logs(network_info: dict) -> str:
@@ -71,7 +71,7 @@ def validate_streaming_binaries(cameras: list[dict]) -> None:
 class MediaMTXService:
     """Manage the MediaMTX process and auto-generated config."""
 
-    def __init__(self, state_dir: str, port: int = DEFAULT_RTMP_PORT) -> None:
+    def __init__(self, state_dir: str, port: int = DEFAULT_RTSP_PORT) -> None:
         self._state_dir = Path(state_dir)
         self._port = port
         self._config_path = self._state_dir / "mediamtx.yml"
@@ -88,11 +88,11 @@ class MediaMTXService:
     def _config_text(self) -> str:
         return (
             "logLevel: warn\n"
-            "rtsp: no\n"
+            "rtsp: yes\n"
+            f"rtspAddress: :{self._port}\n"
             "hls: no\n"
             "webrtc: no\n"
-            "rtmp: yes\n"
-            f"rtmpAddress: :{self._port}\n"
+            "rtmp: no\n"
             "paths:\n"
             "  all:\n"
             "    source: publisher\n"
@@ -171,7 +171,7 @@ class MediaMTXService:
         if self._port_is_listening():
             self._using_external = True
             log.info(
-                "RTMP port %d is already in use; reusing existing local MediaMTX instance.",
+                "RTSP port %d is already in use; reusing existing local MediaMTX instance.",
                 self._port,
             )
             return
@@ -236,7 +236,7 @@ class MediaMTXService:
 
 
 class StreamPublisher:
-    """Keep publishing one camera to one RTMP path until shutdown."""
+    """Keep publishing one camera to one RTSP path until shutdown."""
 
     def __init__(self, camera_config: dict, stream_url: str, stop_event: threading.Event) -> None:
         self._camera = camera_config
@@ -255,7 +255,7 @@ class StreamPublisher:
             consecutive_failures += 1
             delay = backoff_delay(consecutive_failures - 1)
             log.warning(
-                "Camera %r: RTMP stream publisher failed; retrying in %.1f s.",
+                "Camera %r: RTSP stream publisher failed; retrying in %.1f s.",
                 self._name,
                 delay,
             )
@@ -266,7 +266,7 @@ class StreamPublisher:
             return self._run_v4l2_once()
         if self._camera["driver"] == "CSI":
             return self._run_csi_once()
-        log.error("Camera %r: unsupported driver %r for RTMP streaming.", self._name, self._camera["driver"])
+        log.error("Camera %r: unsupported driver %r for RTSP streaming.", self._name, self._camera["driver"])
         return False
 
     def _run_v4l2_once(self) -> bool:
@@ -319,7 +319,9 @@ class StreamPublisher:
             "-muxpreload",
             "0",
             "-f",
-            "flv",
+            "rtsp",
+            "-rtsp_transport",
+            "tcp",
             self._stream_url,
         ]
 
@@ -371,7 +373,9 @@ class StreamPublisher:
             "-muxpreload",
             "0",
             "-f",
-            "flv",
+            "rtsp",
+            "-rtsp_transport",
+            "tcp",
             self._stream_url,
         ]
 
@@ -388,7 +392,7 @@ class StreamPublisher:
                 stderr=subprocess.DEVNULL,
             )
         except OSError as exc:
-            log.warning("Camera %r: could not start CSI RTMP pipeline: %s", self._name, exc)
+            log.warning("Camera %r: could not start CSI RTSP pipeline: %s", self._name, exc)
             return False
 
         if cam_proc.stdout is not None:
@@ -414,7 +418,7 @@ class StreamPublisher:
                 os.unlink(log_path)
             except OSError:
                 pass
-            log.warning("Camera %r: could not start RTMP publisher: %s", self._name, exc)
+            log.warning("Camera %r: could not start RTSP publisher: %s", self._name, exc)
             return False
 
         try:
@@ -432,7 +436,7 @@ class StreamPublisher:
                         pass
                     if details:
                         log.warning(
-                            "Camera %r: RTMP publisher exited with code %d. ffmpeg output: %s",
+                            "Camera %r: RTSP publisher exited with code %d. ffmpeg output: %s",
                             self._name,
                             rc,
                             details,

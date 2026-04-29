@@ -1,4 +1,4 @@
-"""Tests for local RTMP streaming helpers."""
+"""Tests for local RTSP streaming helpers."""
 
 import socket
 import tempfile
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from prusaconnectcamera.streaming import (
     MediaMTXService,
-    build_stream_url,
+    build_rtsp_url,
     stream_host_for_logs,
     stream_path_for_camera,
 )
@@ -20,8 +20,8 @@ def test_stream_path_for_csi_camera():
     assert stream_path_for_camera("CSI", 1, 1) == "csi/1"
 
 
-def test_build_stream_url_uses_standard_rtmp_syntax():
-    assert build_stream_url("192.168.1.10", 554, "usb/1") == "rtmp://192.168.1.10:554/usb/1"
+def test_build_rtsp_url_uses_standard_rtsp_syntax():
+    assert build_rtsp_url("192.168.1.10", 8554, "usb/1") == "rtsp://192.168.1.10:8554/usb/1"
 
 
 def test_stream_host_prefers_wifi_ipv4_then_lan_ipv4():

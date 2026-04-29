@@ -31,8 +31,8 @@ class CaptureBackend(abc.ABC):
         """Capture one JPEG frame and return the raw bytes."""
 
 
-class RTMPSnapshotBackend(CaptureBackend):
-    """Capture a JPEG frame from a local RTMP stream using ``ffmpeg``."""
+class RTSPSnapshotBackend(CaptureBackend):
+    """Capture a JPEG frame from a local RTSP stream using ``ffmpeg``."""
 
     BINARY = "ffmpeg"
 
@@ -49,6 +49,7 @@ class RTMPSnapshotBackend(CaptureBackend):
                 [
                     self.BINARY,
                     "-y",
+                    "-rtsp_transport", "tcp",
                     "-i", self._stream_url,
                     "-frames:v", "1",
                     "-vf", f"scale={self._width}:{self._height}",
@@ -60,14 +61,14 @@ class RTMPSnapshotBackend(CaptureBackend):
             )
         except subprocess.TimeoutExpired as exc:
             raise CaptureError(
-                f"ffmpeg timed out capturing from RTMP stream {self._stream_url}"
+                f"ffmpeg timed out capturing from RTSP stream {self._stream_url}"
             ) from exc
 
         try:
             if result.returncode != 0:
                 stderr = result.stderr.decode(errors="replace").strip()
                 raise CaptureError(
-                    f"ffmpeg exited {result.returncode} capturing from RTMP stream {self._stream_url}: {stderr}"
+                    f"ffmpeg exited {result.returncode} capturing from RTSP stream {self._stream_url}: {stderr}"
                 )
             with open(tmp_path, "rb") as f:
                 return f.read()

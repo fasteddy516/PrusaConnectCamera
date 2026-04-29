@@ -20,14 +20,15 @@ import time
 from prusaconnectcamera import __version__
 from prusaconnectcamera.api import PrusaConnectAPI
 from prusaconnectcamera.camera_info import build_info_payload
-from prusaconnectcamera.capture import CaptureError, RTMPSnapshotBackend, create_backend, validate_backends
+from prusaconnectcamera.capture import CaptureError, RTSPSnapshotBackend, create_backend, validate_backends
 from prusaconnectcamera.config import DEFAULT_CONFIG_PATH, generate_default_config, load_config
 from prusaconnectcamera.network_info import collect_network_info
 from prusaconnectcamera.scheduler import CameraWorker
 from prusaconnectcamera.streaming import (
     MediaMTXService,
+    DEFAULT_RTSP_PORT,
+    build_rtsp_url,
     StreamPublisher,
-    build_stream_url,
     stream_host_for_logs,
     stream_path_for_camera,
     validate_streaming_binaries,
@@ -46,11 +47,11 @@ _STREAM_READY_TIMEOUT = 15.0
 
 
 def _wait_for_stream_ready(camera_state: list[dict], stop_event: threading.Event) -> None:
-    """Wait briefly for RTMP-backed snapshot sources to become readable."""
+    """Wait briefly for RTSP-backed snapshot sources to become readable."""
     for cs in camera_state:
         backend = cs["backend"]
         trigger = cs["config"]["trigger_scheme"]
-        if trigger == "MANUAL" or not isinstance(backend, RTMPSnapshotBackend):
+        if trigger == "MANUAL" or not isinstance(backend, RTSPSnapshotBackend):
             continue
 
         name = cs["config"]["name"]
@@ -65,10 +66,10 @@ def _wait_for_stream_ready(camera_state: list[dict], stop_event: threading.Event
                 stop_event.wait(0.5)
 
         if ready:
-            log.info("Camera %r: RTMP stream is ready for snapshots.", name)
+            log.info("Camera %r: RTSP stream is ready for snapshots.", name)
         else:
             log.warning(
-                "Camera %r: RTMP stream not ready after %.0f s; continuing and relying on retry backoff.",
+                "Camera %r: RTSP stream not ready after %.0f s; continuing and relying on retry backoff.",
                 name,
                 _STREAM_READY_TIMEOUT,
             )
@@ -118,7 +119,7 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
         sys.exit(1)
 
     cameras = config["cameras"]
-    rtmp_port = config["rtmp_port"]
+    rtsp_port = config["rtsp_port"]
 
     # --------------------------------------------------------- backend binaries
     try:
@@ -151,16 +152,16 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
             elif cam["driver"] == "CSI":
                 csi_stream_index += 1
             stream_path = stream_path_for_camera(cam["driver"], usb_stream_index, csi_stream_index)
-            stream_url = build_stream_url("127.0.0.1", rtmp_port, stream_path)
+            stream_url = build_rtsp_url("127.0.0.1", rtsp_port, stream_path)
             log.info(
-                "Camera %r local RTMP URL: %s",
+                "Camera %r local RTSP URL: %s",
                 cam["name"],
-                build_stream_url(streaming_host, rtmp_port, stream_path),
+                build_rtsp_url(streaming_host, rtsp_port, stream_path),
             )
 
         backend = create_backend(cam)
         if stream_url:
-            backend = RTMPSnapshotBackend(
+            backend = RTSPSnapshotBackend(
                 stream_url,
                 cam["resolution"]["width"],
                 cam["resolution"]["height"],
@@ -174,15 +175,15 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
             "stream_url": stream_url,
         })
 
-    # --------------------------------------------------- local RTMP server / publishers
+    # --------------------------------------------------- local RTSP server / publishers
     media_service = None
     stream_threads: list[threading.Thread] = []
     if any(cs["stream_url"] for cs in camera_state):
-        media_service = MediaMTXService(config["state_dir"], rtmp_port)
+        media_service = MediaMTXService(config["state_dir"], rtsp_port)
         try:
             media_service.start()
         except Exception as exc:
-            log.error("RTMP server startup failed: %s", exc)
+            log.error("RTSP server startup failed: %s", exc)
             sys.exit(1)
 
         for cs in camera_state:

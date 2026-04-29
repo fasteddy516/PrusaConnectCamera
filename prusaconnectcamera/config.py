@@ -22,13 +22,13 @@ _REQUIRED_CAMERA_KEYS = frozenset({
 _KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {
     "retry", "enabled", "streaming", "fps", "bitrate", "fingerprint", "firmware", "manufacturer", "model"
 }
-_KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir", "rtmp_port"})
+_KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir", "rtsp_port", "rtmp_port"})
 _ALLOWED_CONFIG_MODES = frozenset({0o600, 0o400})
 
 _DEFAULT_STREAMING = True
 _DEFAULT_FPS = 30
 _DEFAULT_BITRATE = 2500
-_DEFAULT_RTMP_PORT = 1935
+_DEFAULT_RTSP_PORT = 8554
 
 MAX_USB_CAMERAS = 4
 MAX_CSI_CAMERAS = 1
@@ -121,7 +121,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
         ) from exc
 
     default = {
-        "rtmp_port": _DEFAULT_RTMP_PORT,
+        "rtsp_port": _DEFAULT_RTSP_PORT,
         "cameras": [
             {
                 "name": "USB Camera 1",
@@ -249,9 +249,13 @@ def validate_config(data: dict) -> dict:
     if not isinstance(state_dir, str) or not state_dir.strip():
         raise RuntimeError("'state_dir' must be a non-empty string path.")
 
-    rtmp_port = data.get("rtmp_port", _DEFAULT_RTMP_PORT)
-    if not isinstance(rtmp_port, int) or rtmp_port <= 0 or rtmp_port > 65535:
-        raise RuntimeError("'rtmp_port' must be an integer between 1 and 65535.")
+    rtsp_port = data.get("rtsp_port")
+    if rtsp_port is None:
+        rtsp_port = data.get("rtmp_port", _DEFAULT_RTSP_PORT)
+        if "rtmp_port" in data and "rtsp_port" not in data:
+            log.warning("Top-level config key 'rtmp_port' is deprecated; use 'rtsp_port' instead.")
+    if not isinstance(rtsp_port, int) or rtsp_port <= 0 or rtsp_port > 65535:
+        raise RuntimeError("'rtsp_port' must be an integer between 1 and 65535.")
 
     # Validate all cameras, then filter to only enabled ones.
     active = [c for c in cameras if c.get("enabled", True)]
@@ -272,7 +276,7 @@ def validate_config(data: dict) -> dict:
             f"Too many enabled CSI cameras ({active_csi}); maximum is {MAX_CSI_CAMERAS}."
         )
 
-    return {"cameras": active, "state_dir": state_dir, "rtmp_port": rtmp_port}
+    return {"cameras": active, "state_dir": state_dir, "rtsp_port": rtsp_port}
 
 
 def _validate_camera(cam: dict, index: int) -> None:
