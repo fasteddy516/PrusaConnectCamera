@@ -30,6 +30,10 @@ def _mock_response(status_code: int) -> MagicMock:
 
 
 class TestUploadSnapshot:
+    def test_200_returns_true(self, api):
+        with patch("requests.put", return_value=_mock_response(200)):
+            assert api.upload_snapshot(_SMALL_IMAGE) is True
+
     def test_204_returns_true(self, api):
         with patch("requests.put", return_value=_mock_response(204)):
             assert api.upload_snapshot(_SMALL_IMAGE) is True

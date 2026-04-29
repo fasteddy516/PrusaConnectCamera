@@ -35,7 +35,7 @@ class PrusaConnectAPI:
     def upload_snapshot(self, image_data: bytes) -> bool:
         """PUT /c/snapshot — upload a JPEG frame.
 
-        Returns True on HTTP 204 (accepted), False on any failure.
+        Returns True on HTTP 200/204 (accepted), False on any failure.
         All failures are logged; the caller should apply retry logic.
         """
         if len(image_data) > MAX_SNAPSHOT_BYTES:
@@ -56,7 +56,7 @@ class PrusaConnectAPI:
             log.warning("Snapshot upload network error: %s", exc)
             return False
 
-        if response.status_code == 204:
+        if response.status_code in (200, 204):
             log.debug("Snapshot accepted by Prusa Connect.")
             return True
 
