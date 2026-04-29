@@ -31,6 +31,53 @@ class CaptureBackend(abc.ABC):
         """Capture one JPEG frame and return the raw bytes."""
 
 
+class RTMPSnapshotBackend(CaptureBackend):
+    """Capture a JPEG frame from a local RTMP stream using ``ffmpeg``."""
+
+    BINARY = "ffmpeg"
+
+    def __init__(self, stream_url: str, width: int, height: int) -> None:
+        self._stream_url = stream_url
+        self._width = width
+        self._height = height
+
+    def capture(self) -> bytes:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            result = subprocess.run(
+                [
+                    self.BINARY,
+                    "-y",
+                    "-i", self._stream_url,
+                    "-frames:v", "1",
+                    "-vf", f"scale={self._width}:{self._height}",
+                    "-q:v", "2",
+                    tmp_path,
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise CaptureError(
+                f"ffmpeg timed out capturing from RTMP stream {self._stream_url}"
+            ) from exc
+
+        try:
+            if result.returncode != 0:
+                stderr = result.stderr.decode(errors="replace").strip()
+                raise CaptureError(
+                    f"ffmpeg exited {result.returncode} capturing from RTMP stream {self._stream_url}: {stderr}"
+                )
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 class V4L2Backend(CaptureBackend):
     """Capture a JPEG still from a V4L2 device using ``ffmpeg``."""
 

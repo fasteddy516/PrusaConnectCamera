@@ -20,10 +20,15 @@ _REQUIRED_CAMERA_KEYS = frozenset({
     "name", "printer_uuid", "token", "device_path", "driver", "trigger_scheme", "resolution"
 })
 _KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {
-    "retry", "enabled", "fingerprint", "firmware", "manufacturer", "model"
+    "retry", "enabled", "streaming", "fps", "bitrate", "fingerprint", "firmware", "manufacturer", "model"
 }
-_KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir"})
+_KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir", "rtmp_port"})
 _ALLOWED_CONFIG_MODES = frozenset({0o600, 0o400})
+
+_DEFAULT_STREAMING = True
+_DEFAULT_FPS = 30
+_DEFAULT_BITRATE = 2500
+_DEFAULT_RTMP_PORT = 1935
 
 MAX_USB_CAMERAS = 4
 MAX_CSI_CAMERAS = 1
@@ -116,10 +121,14 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
         ) from exc
 
     default = {
+        "rtmp_port": _DEFAULT_RTMP_PORT,
         "cameras": [
             {
                 "name": "USB Camera 1",
                 "enabled": True,
+                "streaming": True,
+                "fps": _DEFAULT_FPS,
+                "bitrate": _DEFAULT_BITRATE,
                 "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
@@ -131,6 +140,9 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 2",
                 "enabled": False,
+                "streaming": True,
+                "fps": _DEFAULT_FPS,
+                "bitrate": _DEFAULT_BITRATE,
                 "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
@@ -142,6 +154,9 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 3",
                 "enabled": False,
+                "streaming": True,
+                "fps": _DEFAULT_FPS,
+                "bitrate": _DEFAULT_BITRATE,
                 "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
@@ -153,6 +168,9 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 4",
                 "enabled": False,
+                "streaming": True,
+                "fps": _DEFAULT_FPS,
+                "bitrate": _DEFAULT_BITRATE,
                 "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
@@ -164,6 +182,9 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "CSI Camera",
                 "enabled": False,
+                "streaming": True,
+                "fps": _DEFAULT_FPS,
+                "bitrate": _DEFAULT_BITRATE,
                 "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
@@ -228,6 +249,10 @@ def validate_config(data: dict) -> dict:
     if not isinstance(state_dir, str) or not state_dir.strip():
         raise RuntimeError("'state_dir' must be a non-empty string path.")
 
+    rtmp_port = data.get("rtmp_port", _DEFAULT_RTMP_PORT)
+    if not isinstance(rtmp_port, int) or rtmp_port <= 0 or rtmp_port > 65535:
+        raise RuntimeError("'rtmp_port' must be an integer between 1 and 65535.")
+
     # Validate all cameras, then filter to only enabled ones.
     active = [c for c in cameras if c.get("enabled", True)]
     if len(active) == 0:
@@ -247,7 +272,7 @@ def validate_config(data: dict) -> dict:
             f"Too many enabled CSI cameras ({active_csi}); maximum is {MAX_CSI_CAMERAS}."
         )
 
-    return {"cameras": active, "state_dir": state_dir}
+    return {"cameras": active, "state_dir": state_dir, "rtmp_port": rtmp_port}
 
 
 def _validate_camera(cam: dict, index: int) -> None:
@@ -268,6 +293,27 @@ def _validate_camera(cam: dict, index: int) -> None:
     if "enabled" in cam and not isinstance(cam["enabled"], bool):
         raise RuntimeError(
             f"Camera entry {index}: 'enabled' must be a boolean (true or false)."
+        )
+
+    if "streaming" not in cam:
+        cam["streaming"] = _DEFAULT_STREAMING
+    if not isinstance(cam["streaming"], bool):
+        raise RuntimeError(
+            f"Camera entry {index}: 'streaming' must be a boolean (true or false)."
+        )
+
+    if "fps" not in cam:
+        cam["fps"] = _DEFAULT_FPS
+    if not isinstance(cam["fps"], int) or cam["fps"] <= 0:
+        raise RuntimeError(
+            f"Camera entry {index}: 'fps' must be a positive integer."
+        )
+
+    if "bitrate" not in cam:
+        cam["bitrate"] = _DEFAULT_BITRATE
+    if not isinstance(cam["bitrate"], int) or cam["bitrate"] <= 0:
+        raise RuntimeError(
+            f"Camera entry {index}: 'bitrate' must be a positive integer in kbps."
         )
 
     if "fingerprint" in cam and (

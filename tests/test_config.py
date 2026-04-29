@@ -109,6 +109,18 @@ class TestValidateConfigStructure:
         result = validate_config(data)
         assert result["state_dir"] == "/tmp/test_state"
 
+    def test_default_rtmp_port(self):
+        result = validate_config(_MINIMAL_CONFIG)
+        assert result["rtmp_port"] == 1935
+
+    def test_rtmp_port_override(self):
+        result = validate_config({**_MINIMAL_CONFIG, "rtmp_port": 8554})
+        assert result["rtmp_port"] == 8554
+
+    def test_invalid_rtmp_port_fails(self):
+        with pytest.raises(RuntimeError, match="rtmp_port"):
+            validate_config({**_MINIMAL_CONFIG, "rtmp_port": 70000})
+
     def test_missing_cameras_key_fails(self):
         with pytest.raises(RuntimeError, match="cameras"):
             validate_config({})
@@ -202,6 +214,18 @@ class TestValidateCamera:
         result = validate_config({"cameras": [_MINIMAL_CAMERA]})
         assert len(result["cameras"]) == 1
 
+    def test_streaming_defaults_to_true(self):
+        result = validate_config({"cameras": [_MINIMAL_CAMERA]})
+        assert result["cameras"][0]["streaming"] is True
+
+    def test_fps_defaults_to_30(self):
+        result = validate_config({"cameras": [_MINIMAL_CAMERA]})
+        assert result["cameras"][0]["fps"] == 30
+
+    def test_bitrate_defaults_to_2500(self):
+        result = validate_config({"cameras": [_MINIMAL_CAMERA]})
+        assert result["cameras"][0]["bitrate"] == 2500
+
     def test_all_disabled_cameras_fails(self):
         cam = {**_MINIMAL_CAMERA, "enabled": False}
         with pytest.raises(RuntimeError, match="No cameras are enabled"):
@@ -210,6 +234,21 @@ class TestValidateCamera:
     def test_enabled_non_bool_fails(self):
         cam = {**_MINIMAL_CAMERA, "enabled": "yes"}
         with pytest.raises(RuntimeError, match="enabled"):
+            validate_config({"cameras": [cam]})
+
+    def test_streaming_non_bool_fails(self):
+        cam = {**_MINIMAL_CAMERA, "streaming": "yes"}
+        with pytest.raises(RuntimeError, match="streaming"):
+            validate_config({"cameras": [cam]})
+
+    def test_fps_non_positive_fails(self):
+        cam = {**_MINIMAL_CAMERA, "fps": 0}
+        with pytest.raises(RuntimeError, match="fps"):
+            validate_config({"cameras": [cam]})
+
+    def test_bitrate_non_positive_fails(self):
+        cam = {**_MINIMAL_CAMERA, "bitrate": 0}
+        with pytest.raises(RuntimeError, match="bitrate"):
             validate_config({"cameras": [cam]})
 
     def test_disabled_cameras_do_not_count_toward_v4l2_limit(self):
@@ -264,6 +303,7 @@ class TestGenerateDefaultConfig:
                 data = json.load(f)
             assert "cameras" in data
             assert len(data["cameras"]) == 5
+            assert data["rtmp_port"] == 1935
 
     def test_only_first_camera_enabled(self):
         with tempfile.TemporaryDirectory() as d:
@@ -304,6 +344,17 @@ class TestGenerateDefaultConfig:
                 assert "firmware" not in camera
                 assert "manufacturer" not in camera
                 assert "model" not in camera
+
+    def test_generated_default_config_includes_streaming_defaults(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.json")
+            generate_default_config(path)
+            with open(path) as f:
+                data = json.load(f)
+            for camera in data["cameras"]:
+                assert camera["streaming"] is True
+                assert camera["fps"] == 30
+                assert camera["bitrate"] == 2500
 
     def test_does_not_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as d:
