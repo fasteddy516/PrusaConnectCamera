@@ -14,6 +14,7 @@ from prusaconnectcamera.config import (
     load_config,
     DEFAULT_STATE_DIR,
 )
+from prusaconnectcamera.fingerprint import is_valid_fingerprint
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -218,6 +219,11 @@ class TestValidateCamera:
         result = validate_config({"cameras": enabled + disabled})
         assert len(result["cameras"]) == 4
 
+    def test_invalid_fingerprint_fails(self):
+        cam = {**_MINIMAL_CAMERA, "fingerprint": "not-a-uuid"}
+        with pytest.raises(RuntimeError, match="fingerprint"):
+            validate_config({"cameras": [cam]})
+
 
 # ---------------------------------------------------------------------------
 # generate_default_config
@@ -261,6 +267,15 @@ class TestGenerateDefaultConfig:
             assert drivers.count("V4L2") == 4
             assert drivers.count("CSI") == 1
 
+    def test_generated_default_config_contains_fingerprints(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.json")
+            generate_default_config(path)
+            with open(path) as f:
+                data = json.load(f)
+            for camera in data["cameras"]:
+                assert is_valid_fingerprint(camera["fingerprint"])
+
     def test_does_not_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "config.json")
@@ -286,7 +301,41 @@ class TestLoadConfig:
         try:
             result = load_config(path)
             assert result["cameras"][0]["name"] == "Front Camera"
+            assert is_valid_fingerprint(result["cameras"][0]["fingerprint"])
         finally:
+            os.unlink(path)
+
+    def test_missing_fingerprint_is_generated_and_persisted(self):
+        path = _write_config(_MINIMAL_CONFIG, 0o600)
+        try:
+            result = load_config(path)
+            fingerprint = result["cameras"][0]["fingerprint"]
+            assert is_valid_fingerprint(fingerprint)
+            with open(path) as f:
+                persisted = json.load(f)
+            assert persisted["cameras"][0]["fingerprint"] == fingerprint
+        finally:
+            os.unlink(path)
+
+    def test_existing_fingerprint_is_preserved(self):
+        fingerprint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        path = _write_config({"cameras": [{**_MINIMAL_CAMERA, "fingerprint": fingerprint}]}, 0o600)
+        try:
+            result = load_config(path)
+            assert result["cameras"][0]["fingerprint"] == fingerprint
+            with open(path) as f:
+                persisted = json.load(f)
+            assert persisted["cameras"][0]["fingerprint"] == fingerprint
+        finally:
+            os.unlink(path)
+
+    def test_missing_fingerprint_in_read_only_config_fails(self):
+        path = _write_config(_MINIMAL_CONFIG, 0o400)
+        try:
+            with pytest.raises(RuntimeError, match="missing one or more camera fingerprints"):
+                load_config(path)
+        finally:
+            os.chmod(path, 0o600)
             os.unlink(path)
 
     def test_rejects_invalid_json(self):

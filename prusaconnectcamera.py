@@ -19,7 +19,6 @@ import threading
 from prusaconnectcamera.api import PrusaConnectAPI
 from prusaconnectcamera.capture import create_backend, validate_backends
 from prusaconnectcamera.config import DEFAULT_CONFIG_PATH, generate_default_config, load_config
-from prusaconnectcamera.fingerprint import load_or_create
 from prusaconnectcamera.scheduler import CameraWorker
 
 logging.basicConfig(
@@ -83,7 +82,6 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
         log.error("Configuration error: %s", exc)
         sys.exit(1)
 
-    state_dir = config["state_dir"]
     cameras = config["cameras"]
 
     # --------------------------------------------------------- backend binaries
@@ -96,13 +94,7 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
     # ------------------------------------------------------- per-camera startup
     camera_state = []
     for cam in cameras:
-        try:
-            fp = load_or_create(cam["name"], state_dir)
-        except RuntimeError as exc:
-            log.error("Fingerprint error for camera %r: %s", cam["name"], exc)
-            sys.exit(1)
-
-        api = PrusaConnectAPI(cam["token"], fp)
+        api = PrusaConnectAPI(cam["token"], cam["fingerprint"])
         backend = create_backend(cam)
         camera_state.append({
             "config": cam,

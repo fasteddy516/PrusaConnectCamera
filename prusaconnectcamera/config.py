@@ -6,6 +6,8 @@ import os
 import stat
 from pathlib import Path
 
+from prusaconnectcamera.fingerprint import generate_fingerprint, is_valid_fingerprint
+
 log = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -17,12 +19,66 @@ _VALID_TRIGGER_SCHEMES = frozenset({"MANUAL", "TEN_SEC", "THIRTY_SEC", "SIXTY_SE
 _REQUIRED_CAMERA_KEYS = frozenset({
     "name", "printer_uuid", "token", "device_path", "driver", "trigger_scheme", "resolution"
 })
-_KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {"retry", "enabled"}
+_KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {"retry", "enabled", "fingerprint"}
 _KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir"})
 _ALLOWED_CONFIG_MODES = frozenset({0o600, 0o400})
 
 MAX_USB_CAMERAS = 4
 MAX_CSI_CAMERAS = 1
+
+
+def _persist_config(path: str, data: dict) -> None:
+    """Rewrite *path* atomically with *data* while preserving restrictive mode."""
+    temp_path = f"{path}.tmp"
+    try:
+        with open(temp_path, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.chmod(temp_path, 0o600)
+        os.replace(temp_path, path)
+    except OSError as exc:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise RuntimeError(f"Cannot update config file {path}: {exc}") from exc
+
+
+def _ensure_camera_fingerprints(data: dict, path: str) -> dict:
+    """Populate missing camera fingerprints in *data* and persist the config if needed."""
+    cameras = data.get("cameras")
+    if not isinstance(cameras, list):
+        return data
+
+    changed = False
+    for index, cam in enumerate(cameras):
+        if not isinstance(cam, dict):
+            continue
+        fingerprint = cam.get("fingerprint")
+        if fingerprint is None:
+            cam["fingerprint"] = generate_fingerprint()
+            changed = True
+            log.info(
+                "Generated missing fingerprint for camera entry %d (%r).",
+                index,
+                cam.get("name", f"camera {index}"),
+            )
+            continue
+        if not isinstance(fingerprint, str) or not is_valid_fingerprint(fingerprint):
+            raise RuntimeError(
+                f"Camera entry {index}: 'fingerprint' must be a valid UUID string."
+            )
+
+    if changed:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        if mode == 0o400:
+            raise RuntimeError(
+                f"Config file {path} is read-only (0400) and is missing one or more camera fingerprints. "
+                f"Make it writable with: chmod 600 {path}, then restart so fingerprints can be persisted."
+            )
+        _persist_config(path, data)
+
+    return data
 
 
 def check_permissions(path: str) -> None:
@@ -62,6 +118,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 1",
                 "enabled": True,
+                "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
                 "device_path": "/dev/video0",
@@ -72,6 +129,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 2",
                 "enabled": False,
+                "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
                 "device_path": "/dev/video1",
@@ -82,6 +140,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 3",
                 "enabled": False,
+                "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
                 "device_path": "/dev/video2",
@@ -92,6 +151,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "USB Camera 4",
                 "enabled": False,
+                "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
                 "device_path": "/dev/video3",
@@ -102,6 +162,7 @@ def generate_default_config(path: str = DEFAULT_CONFIG_PATH) -> None:
             {
                 "name": "CSI Camera",
                 "enabled": False,
+                "fingerprint": generate_fingerprint(),
                 "printer_uuid": "REPLACE-WITH-PRINTER-UUID",
                 "token": "REPLACE-WITH-CAMERA-TOKEN",
                 "device_path": "/dev/video0",
@@ -139,6 +200,7 @@ def load_config(path: str = DEFAULT_CONFIG_PATH) -> dict:
         raise RuntimeError(f"Config file {path} contains invalid JSON: {e}") from e
     except OSError as e:
         raise RuntimeError(f"Cannot read config file {path}: {e}") from e
+    raw = _ensure_camera_fingerprints(raw, path)
     return validate_config(raw)
 
 
@@ -204,6 +266,14 @@ def _validate_camera(cam: dict, index: int) -> None:
     if "enabled" in cam and not isinstance(cam["enabled"], bool):
         raise RuntimeError(
             f"Camera entry {index}: 'enabled' must be a boolean (true or false)."
+        )
+
+    if "fingerprint" in cam and (
+        not isinstance(cam["fingerprint"], str)
+        or not is_valid_fingerprint(cam["fingerprint"])
+    ):
+        raise RuntimeError(
+            f"Camera entry {index}: 'fingerprint' must be a valid UUID string."
         )
 
     for key in ("name", "printer_uuid", "token", "device_path"):
