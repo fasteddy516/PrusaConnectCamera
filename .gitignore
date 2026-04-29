@@ -216,7 +216,9 @@ __marimo__/
 
 # PrusaConnectCamera
 # Local config files contain tokens — never commit them.
+# Runtime state directory contains MediaMTX logs, PIDs, and generated config.
 config.json
+state/
 *.json
 
 # Streamlit

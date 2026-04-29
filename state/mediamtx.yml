@@ -1,9 +1,0 @@
-logLevel: warn
-rtsp: yes
-rtspAddress: :8554
-hls: no
-webrtc: no
-rtmp: no
-paths:
-  all:
-    source: publisher
