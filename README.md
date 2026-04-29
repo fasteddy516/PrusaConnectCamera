@@ -124,6 +124,30 @@ SUBSYSTEM=="video4linux", ATTRS{serial}=="XYZ789", SYMLINK+="camera_side"
 
 Then use `/dev/camera_front` and `/dev/camera_side` in `device_path`.
 
+Reload and apply the new rules:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=video4linux
+sudo udevadm settle
+```
+
+Verify the links:
+
+```bash
+ls -l /dev/camera_*
+```
+
+If links do not appear, unplug/replug the camera and verify match keys with:
+
+```bash
+udevadm info -a -n /dev/video0 | grep -E 'serial|idVendor|idProduct' -m 10
+```
+
+Some webcams do not expose a usable `ATTRS{serial}`. In that case, prefer
+stable built-in paths under `/dev/v4l/by-id/` (or match on other attributes
+such as `idVendor` + `idProduct` plus a unique physical port path).
+
 ### 9. Install and start the systemd service
 
 ```bash
