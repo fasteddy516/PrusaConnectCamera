@@ -63,16 +63,19 @@ This repository is for a Python service that connects USB webcams and/or a Raspb
 - Design for up to 4 USB cameras plus 1 CSI camera (reflecting the 4 USB ports and single CSI connector on a Raspberry Pi), where each camera can target a different printer UUID/token pair.
 - Prefer stable Linux device addressing (for example UDEV rules with persistent symlinks) so camera-to-printer mapping remains deterministic even with identical webcam models.
 - Prefer Linux-native webcam access patterns suitable for Raspberry Pi OS, such as V4L2-compatible capture tools or libraries.
-- Prefer a lightweight capture approach orchestrated by Python with Linux-native tools: use `ffmpeg` for USB/V4L2 capture and support Raspberry Pi CSI cameras via `libcamera-still` (or equivalent libcamera tooling).
+- Prefer a lightweight capture approach orchestrated by Python with Linux-native tools: use `ffmpeg` for USB/V4L2 capture and RTSP stream ingestion, and support Raspberry Pi CSI cameras via `libcamera-still` for stills plus `libcamera-vid` for live RTSP publishing.
 - Make capture backend selection explicit per camera in JSON (for example `v4l2` or `csi`) and validate required binaries at startup.
 - Treat missing backend executables as non-recoverable startup errors for affected cameras.
+- Support local RTSP streaming through MediaMTX when per-camera `streaming` is enabled. Treat RTSP as the only local live-streaming protocol; do not add RTMP support.
+- When streaming is enabled, let the live publisher own the physical camera device and have snapshot capture read back from the local RTSP stream to avoid camera contention.
+- Generate MediaMTX config under `state_dir`, manage an app-owned MediaMTX process when needed, and reuse an already-listening local MediaMTX instance on the configured RTSP port.
 - Handle transient network and camera errors defensively with useful log messages and sensible retry behavior where appropriate.
 - Distinguish recoverable failures, such as temporary network or camera read errors, from non-recoverable configuration or authentication failures.
 - On `401`, `403`, or `404` responses, continue retrying with clear warning/error logs rather than crashing silently.
 - Implement bounded exponential backoff with jitter for recoverable failures, with retry state tracked per camera. Default values: initial delay 2 s, maximum delay 60 s, jitter ±20%.
 - Keep service behavior resilient for unattended operation: retries should continue indefinitely unless explicitly disabled in config.
-- Update camera metadata with `PUT /c/info` at startup and when local camera configuration changes.
-- Define config change detection with a deterministic method (for example full-file hash comparison) and only refresh affected camera metadata.
+- Update camera metadata with `PUT /c/info` at startup and when the config file changes.
+- Define config change detection with a deterministic method (for example full-file hash comparison). In the current implementation, any valid config file change triggers `PUT /c/info` for all configured cameras that are still present by name.
 - Collect host network info (`network_info`) once at startup — not on a polling loop — and include it in `PUT /c/info` payloads. When the default route is wireless, include `wifi_mac`, `wifi_ipv4`, and `wifi_ssid` (SSID via `iwgetid -r`; omit gracefully if unavailable). When wired, include `lan_mac` and `lan_ipv4`. Include IPv6 only when IPv4 is unavailable.
 - For V4L2 (USB) captures, skip the first ~20 frames via ffmpeg to avoid dark/black warm-up frames from freshly opened webcams.
 - Avoid hard-coding paths or assumptions that only work on a development workstation.
@@ -82,8 +85,9 @@ This repository is for a Python service that connects USB webcams and/or a Raspb
 
 - Define and document a strict schema for the JSON config file.
 - Require a top-level camera list with 1 to 4 USB (`V4L2`) cameras plus up to 1 CSI camera, reflecting the 4 USB ports and single CSI connector on a Raspberry Pi.
+- Support top-level `state_dir` plus `rtsp_port`; accept `rtmp_port` only as a deprecated compatibility alias that normalizes to `rtsp_port`.
 - Require per-camera fields at minimum: `name`, `printer_uuid`, `token`, `device_path`, `driver`, `trigger_scheme`, and `resolution`.
-- Optional per-camera fields: `enabled` (bool, default `true`), `fingerprint` (UUID4 string, auto-generated and written back if absent), `firmware` (string, defaults to script version), `manufacturer` (string, defaults to `"fasteddy516"`), `model` (string, defaults to a generated label).
+- Optional per-camera fields: `enabled` (bool, default `true`), `streaming` (bool, default `true`), `fps` (int, default `30`), `bitrate` (int kbps, default `2500`), `fingerprint` (UUID4 string, auto-generated and written back if absent), `firmware` (string, defaults to script version), `manufacturer` (string, defaults to `"fasteddy516"`), `model` (string, defaults to a generated label).
 - Restrict `trigger_scheme` to `MANUAL`, `TEN_SEC`, `THIRTY_SEC`, `SIXTY_SEC`, `TEN_MIN` (deprecated compatibility).
 - Require explicit backend/driver selection compatible with device type (`V4L2` for USB webcams, `CSI` for Raspberry Pi CSI camera input).
 - Allow unknown keys in the config file but emit a warning for each unrecognised key at startup; do not fail.
@@ -105,14 +109,14 @@ This repository is for a Python service that connects USB webcams and/or a Raspb
 ## Capture Backends
 
 - Support USB webcams via V4L2 capture (using `ffmpeg`).
-- Support Raspberry Pi CSI cameras via libcamera tooling (`libcamera-still` or equivalent).
+- Support Raspberry Pi CSI cameras via libcamera tooling (`libcamera-still` for stills and `libcamera-vid` for streaming).
 - Validate backend command availability at startup and produce actionable errors.
 - Keep backend invocation isolated behind a capture interface so future backend swaps do not affect API transport logic.
 
 ## Metadata Refresh Rules
 
 - Send `PUT /c/info` for each configured camera at startup after configuration is validated.
-- Re-send `PUT /c/info` only when camera-relevant config values change.
+- Re-send `PUT /c/info` when the config file hash changes and the reloaded config is valid. In the current implementation, any such change refreshes all configured cameras that are still present by name.
 - Avoid periodic metadata refresh unless explicitly configured in the future.
 
 ## Testing and Validation
