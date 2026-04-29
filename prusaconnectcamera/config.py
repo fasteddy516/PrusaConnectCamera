@@ -19,7 +19,9 @@ _VALID_TRIGGER_SCHEMES = frozenset({"MANUAL", "TEN_SEC", "THIRTY_SEC", "SIXTY_SE
 _REQUIRED_CAMERA_KEYS = frozenset({
     "name", "printer_uuid", "token", "device_path", "driver", "trigger_scheme", "resolution"
 })
-_KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {"retry", "enabled", "fingerprint"}
+_KNOWN_CAMERA_KEYS = _REQUIRED_CAMERA_KEYS | {
+    "retry", "enabled", "fingerprint", "firmware", "manufacturer", "model"
+}
 _KNOWN_TOP_KEYS = frozenset({"cameras", "state_dir"})
 _ALLOWED_CONFIG_MODES = frozenset({0o600, 0o400})
 
@@ -275,6 +277,12 @@ def _validate_camera(cam: dict, index: int) -> None:
         raise RuntimeError(
             f"Camera entry {index}: 'fingerprint' must be a valid UUID string."
         )
+
+    for key in ("firmware", "manufacturer", "model"):
+        if key in cam and (not isinstance(cam[key], str) or not cam[key].strip()):
+            raise RuntimeError(
+                f"Camera entry {index}: '{key}' must be a non-empty string when provided."
+            )
 
     for key in ("name", "printer_uuid", "token", "device_path"):
         if not isinstance(cam[key], str) or not cam[key].strip():

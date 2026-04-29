@@ -16,9 +16,12 @@ import signal
 import sys
 import threading
 
+from prusaconnectcamera import __version__
 from prusaconnectcamera.api import PrusaConnectAPI
+from prusaconnectcamera.camera_info import build_info_payload
 from prusaconnectcamera.capture import create_backend, validate_backends
 from prusaconnectcamera.config import DEFAULT_CONFIG_PATH, generate_default_config, load_config
+from prusaconnectcamera.network_info import collect_network_info
 from prusaconnectcamera.scheduler import CameraWorker
 
 logging.basicConfig(
@@ -32,24 +35,17 @@ log = logging.getLogger("prusaconnectcamera")
 _CONFIG_POLL_INTERVAL = 10
 
 
-def _build_info_payload(camera: dict) -> dict:
-    """Build the PUT /c/info request body from a camera config entry.
+def _build_info_payload(camera: dict, camera_number: int, network_info: dict) -> dict:
+    """Build the PUT /c/info request body from camera config and host state.
 
     Ref: https://connect.prusa3d.com/docs/cameras/openapi/
     """
-    return {
-        "config": {
-            "path": camera["device_path"],
-            "name": camera["name"],
-            "driver": camera["driver"],
-            "trigger_scheme": camera["trigger_scheme"],
-            "resolution": {
-                "width": camera["resolution"]["width"],
-                "height": camera["resolution"]["height"],
-            },
-        },
-        "capabilities": ["trigger_scheme", "resolution"],
-    }
+    return build_info_payload(
+        camera=camera,
+        camera_number=camera_number,
+        script_version=__version__,
+        network_info=network_info,
+    )
 
 
 def _file_sha256(path: str) -> str:
@@ -92,11 +88,18 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
         sys.exit(1)
 
     # ------------------------------------------------------- per-camera startup
+    network_info = collect_network_info()
+    if network_info:
+        log.info("Detected network info keys for camera attributes: %s", ", ".join(sorted(network_info.keys())))
+    else:
+        log.info("No active default network route detected; omitting network_info from camera attributes.")
+
     camera_state = []
-    for cam in cameras:
+    for index, cam in enumerate(cameras, start=1):
         api = PrusaConnectAPI(cam["token"], cam["fingerprint"])
         backend = create_backend(cam)
         camera_state.append({
+            "number": index,
             "config": cam,
             "api": api,
             "backend": backend,
@@ -106,7 +109,7 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
     for cs in camera_state:
         name = cs["config"]["name"]
         log.info("Sending initial camera info for %r.", name)
-        payload = _build_info_payload(cs["config"])
+        payload = _build_info_payload(cs["config"], cs["number"], network_info)
         if not cs["api"].update_info(payload):
             log.warning("Initial info update for camera %r failed; will retry on next config change.", name)
 
@@ -172,7 +175,7 @@ def main(config_path: str = DEFAULT_CONFIG_PATH) -> None:
             if name in new_cameras_by_name:
                 updated_cam = new_cameras_by_name[name]
                 cs["config"] = updated_cam
-                payload = _build_info_payload(updated_cam)
+                payload = _build_info_payload(updated_cam, cs["number"], network_info)
                 log.info("Re-sending camera info for %r.", name)
                 cs["api"].update_info(payload)
 

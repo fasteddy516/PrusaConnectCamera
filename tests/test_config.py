@@ -224,6 +224,24 @@ class TestValidateCamera:
         with pytest.raises(RuntimeError, match="fingerprint"):
             validate_config({"cameras": [cam]})
 
+    def test_optional_metadata_fields_are_allowed(self):
+        cam = {
+            **_MINIMAL_CAMERA,
+            "firmware": "1.2.3",
+            "manufacturer": "MyCamCo",
+            "model": "Model X",
+        }
+        result = validate_config({"cameras": [cam]})
+        assert result["cameras"][0]["firmware"] == "1.2.3"
+        assert result["cameras"][0]["manufacturer"] == "MyCamCo"
+        assert result["cameras"][0]["model"] == "Model X"
+
+    def test_optional_metadata_fields_must_be_non_empty_strings(self):
+        for key in ("firmware", "manufacturer", "model"):
+            cam = {**_MINIMAL_CAMERA, key: ""}
+            with pytest.raises(RuntimeError, match=key):
+                validate_config({"cameras": [cam]})
+
 
 # ---------------------------------------------------------------------------
 # generate_default_config
@@ -275,6 +293,17 @@ class TestGenerateDefaultConfig:
                 data = json.load(f)
             for camera in data["cameras"]:
                 assert is_valid_fingerprint(camera["fingerprint"])
+
+    def test_generated_default_config_omits_optional_metadata_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.json")
+            generate_default_config(path)
+            with open(path) as f:
+                data = json.load(f)
+            for camera in data["cameras"]:
+                assert "firmware" not in camera
+                assert "manufacturer" not in camera
+                assert "model" not in camera
 
     def test_does_not_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as d:
